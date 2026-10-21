@@ -121,6 +121,69 @@
   .filters-mini{display:flex;gap:8px;margin-bottom:12px;overflow-x:auto;padding-bottom:2px;}
   .filters-mini button{padding:7px 13px;border-radius:20px;border:1px solid var(--line);background:#fff;font-size:12px;color:var(--ink-soft);white-space:nowrap;}
   .filters-mini button.active{background:var(--purple-800);border-color:var(--purple-800);color:#fff;}
+
+  .nav-desktop-only{display:none;}
+
+  /* ===================================================================
+     LAYOUT PARA COMPUTADOR / TELA LARGA
+     Em telas estreitas (celular) nada muda: o app continua com o
+     layout mobile (bottom-nav fixo, fab flutuante, visor único).
+     A partir de 820px, viramos para um "shell" de aplicativo web:
+     cabeçalho + abas no topo, conteúdo centralizado, sem elementos
+     flutuantes por cima do conteúdo.
+  =================================================================== */
+  @media (min-width:820px){
+    body{
+      background:linear-gradient(150deg, var(--purple-900) 0%, var(--purple-700) 55%, var(--teal-500) 130%);
+      min-height:100vh;
+    }
+    #app{
+      display:flex;flex-direction:column;
+      max-width:900px;width:92%;margin:36px auto;
+      min-height:calc(100vh - 72px);
+      background:var(--card);border-radius:22px;
+      box-shadow:0 25px 70px rgba(20,10,50,.35);
+      padding-bottom:0;overflow:hidden;position:relative;
+    }
+
+    .topbar{
+      order:1;padding:24px 34px 18px;border-bottom:1px solid var(--line);
+      margin:0;
+    }
+    .topbar img{width:40px;height:40px;}
+    .topbar-name{font-size:15px;}
+    .topbar-sub{font-size:11.5px;}
+    .logout-link{font-size:12.5px;}
+
+    .bottom-nav{
+      order:2;position:static;max-width:none;width:auto;margin:0;
+      border-top:none;border-bottom:1px solid var(--line);
+      padding:0 26px;background:transparent;gap:2px;
+    }
+    .nav-btn{
+      flex:none;flex-direction:row;gap:7px;padding:16px 16px;border-radius:0;
+      font-size:13.5px;position:relative;top:1px;
+    }
+    .nav-btn .ic{width:16px;height:16px;}
+    .nav-btn.active{box-shadow:inset 0 -2px 0 var(--purple-700);}
+    .nav-desktop-only{display:flex;}
+
+    .fab{display:none;}
+
+    .view{
+      order:3;padding:30px 34px 44px;max-width:640px;margin:0 auto;width:100%;
+    }
+    #view-novo{max-width:460px;}
+
+    .grid2{max-width:480px;}
+
+    .login-card{max-width:380px;}
+  }
+
+  @media (min-width:1080px){
+    #app{max-width:1000px;}
+    .view{max-width:680px;}
+  }
 </style>
 </head>
 <body>
@@ -229,6 +292,7 @@
   <div class="bottom-nav">
     <button class="nav-btn active" data-view="dashboard" onclick="irParaView('dashboard')"><span class="ic"></span>Início</button>
     <button class="nav-btn" data-view="extrato" onclick="irParaView('extrato')"><span class="ic"></span>Extrato</button>
+    <button class="nav-btn nav-desktop-only" data-view="novo" onclick="irParaView('novo')"><span class="ic"></span>Novo lançamento</button>
   </div>
 </div>
 
