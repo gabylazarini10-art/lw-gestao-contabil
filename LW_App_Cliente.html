@@ -197,6 +197,7 @@
     <input type="password" id="login-pass" placeholder="Senha" autocomplete="off">
     <button class="primary" onclick="tentarLogin()">Entrar</button>
     <div class="login-error" id="login-error"></div>
+    <a href="#" onclick="esqueciSenha();return false;" style="display:inline-block;margin-top:12px;font-size:12.5px;color:var(--ink-soft);text-decoration:underline;">Esqueci minha senha</a>
   </div>
 </div>
 
@@ -352,6 +353,14 @@ function tentarLogin(){
   });
 }
 document.getElementById('login-pass').addEventListener('keydown', e=>{ if(e.key==='Enter') tentarLogin(); });
+function esqueciSenha(){
+  const email = document.getElementById('login-email').value.trim();
+  const el = document.getElementById('login-error');
+  if(!email){ el.style.color='var(--danger)'; el.textContent = 'Digite seu e-mail acima e toque de novo em "Esqueci minha senha".'; return; }
+  auth.sendPasswordResetEmail(email)
+    .then(()=>{ el.style.color='#1D8A82'; el.textContent = 'Enviamos um e-mail para você criar uma nova senha. Olhe também o spam.'; })
+    .catch(()=>{ el.style.color='var(--danger)'; el.textContent = 'Não foi possível enviar. Confira o e-mail digitado.'; });
+}
 function logout(){ pararListenersCliente(); auth.signOut(); }
 
 let unsubCategorias, unsubLancamentos;
