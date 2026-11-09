@@ -251,6 +251,7 @@
   .r-real{background:#FDECED;color:#C15254;}
   .r-mei{background:#FFF4E0;color:#A46A00;}
   .r-eppme{background:#E9EEFB;color:#2B4C9E;}
+  .r-pf{background:#F3E8FB;color:#7B3FB5;}
 
   @media (max-width:900px){
     .sidebar{position:fixed;left:0;top:0;bottom:0;transform:translateX(-100%);transition:transform .2s;z-index:400;}
@@ -635,6 +636,18 @@
     <h3 id="modal-empresa-title">Nova empresa</h3>
     <input type="hidden" id="empresa-id">
     <div class="field">
+      <label>Tipo de cadastro</label>
+      <select id="empresa-tipo" onchange="alternarTipoEmpresa()">
+        <option value="pj">Empresa (CNPJ)</option>
+        <option value="pf">Pessoa Física (CPF): controle pessoal do cliente</option>
+      </select>
+    </div>
+    <div class="field" id="empresa-vinculo-box" style="display:none;">
+      <label>Vinculada à empresa do cliente</label>
+      <select id="empresa-vinculo"></select>
+      <p class="helper-text">O cliente usa o mesmo login do Meu Financeiro e passa a ver o seletor "Empresa | Pessoal". Escolha a empresa (CNPJ) dele aqui.</p>
+    </div>
+    <div class="field">
       <label>Nome / Razão social</label>
       <input type="text" id="empresa-nome" placeholder="Ex: Comércio Silva LTDA">
     </div>
@@ -643,7 +656,7 @@
         <label>CNPJ / CPF</label>
         <input type="text" id="empresa-cnpj" placeholder="00.000.000/0001-00">
       </div>
-      <div class="field">
+      <div class="field" id="empresa-regime-box">
         <label>Regime tributário</label>
         <select id="empresa-regime">
           <option value="simples">Simples Nacional</option>
@@ -661,7 +674,7 @@
         <option value="0">Inativa</option>
       </select>
     </div>
-    <div class="field">
+    <div class="field" id="empresa-rbt12-box">
       <label>Receita acumulada últimos 12 meses (antes de começar no sistema) — R$</label>
       <input type="number" id="empresa-rbt12-inicial" step="0.01" min="0" placeholder="0,00" class="mono">
       <p class="helper-text">Opcional. Preencha se a empresa já tinha faturamento antes de você começar a lançar aqui — evita que o Planejamento Tributário mostre a RBT12 errada nos primeiros meses de uso. Some com o que for lançado no sistema a partir de agora.</p>
@@ -1011,6 +1024,38 @@ const PLANO_PADRAO = [
   ['5.2.05','Outras Despesas Operacionais','5']
 ];
 
+const PLANO_PF = [
+  ['1.1.01','Dinheiro em Espécie','1'],
+  ['1.1.02','Conta Corrente / Bancos','1'],
+  ['1.1.03','Poupança e Investimentos','1'],
+  ['1.1.04','Valores a Receber','1'],
+  ['1.2.01','Imóveis','1'],
+  ['1.2.02','Veículos','1'],
+  ['1.2.03','Outros Bens','1'],
+  ['2.1.01','Cartões de Crédito','2'],
+  ['2.1.02','Contas a Pagar','2'],
+  ['2.1.03','Empréstimos e Financiamentos - Curto Prazo','2'],
+  ['2.2.01','Financiamentos - Longo Prazo (imóvel, veículo)','2'],
+  ['3.1.01','Patrimônio Pessoal (saldo inicial)','3'],
+  ['3.1.02','Resultado Acumulado','3'],
+  ['4.1.01','Salário e Pró-labore','4'],
+  ['4.1.02','Distribuição de Lucros','4'],
+  ['4.1.03','Rendimentos de Investimentos','4'],
+  ['4.1.04','Aluguéis Recebidos','4'],
+  ['4.1.05','Outras Receitas','4'],
+  ['5.2.01','Moradia','5'],
+  ['5.2.02','Alimentação','5'],
+  ['5.2.03','Transporte','5'],
+  ['5.2.04','Saúde','5'],
+  ['5.2.05','Educação','5'],
+  ['5.2.06','Lazer e Viagens','5'],
+  ['5.2.07','Vestuário e Cuidados Pessoais','5'],
+  ['5.2.08','Impostos Pessoais (IPTU, IPVA, IR)','5'],
+  ['5.2.09','Assinaturas e Serviços','5'],
+  ['5.2.10','Despesas Financeiras (juros e tarifas)','5'],
+  ['5.2.11','Outras Despesas','5']
+];
+
 const GRUPOS = {
   '1':{nome:'Ativo', natureza:'devedora'},
   '2':{nome:'Passivo', natureza:'credora'},
@@ -1024,12 +1069,18 @@ const REGIME_LABEL = {
   presumido:{nome:'Lucro Presumido', cls:'r-presumido'},
   real:{nome:'Lucro Real', cls:'r-real'},
   mei:{nome:'MEI', cls:'r-mei'},
-  eppme:{nome:'ME / EPP', cls:'r-eppme'}
+  eppme:{nome:'ME / EPP', cls:'r-eppme'},
+  pf:{nome:'Pessoa Física', cls:'r-pf'}
 };
 
-function criarPlanoParaEmpresa(empresaId){
+function tipoDaEmpresa(empresaId){
+  const e = empresas.find(x=>x.id===empresaId);
+  return e && e.tipo === 'pf' ? 'pf' : 'pj';
+}
+function criarPlanoParaEmpresa(empresaId, tipo){
   const updates = {};
-  PLANO_PADRAO.forEach(([codigo,nome,tipo])=>{
+  const base = (tipo || tipoDaEmpresa(empresaId)) === 'pf' ? PLANO_PF : PLANO_PADRAO;
+  base.forEach(([codigo,nome,tipo])=>{
     const novoId = db.ref('planosEmpresa/'+empresaId).push().key;
     updates['planosEmpresa/'+empresaId+'/'+novoId] = {empresaId, codigo, nome, tipo};
   });
@@ -1205,9 +1256,12 @@ function abrirModalEmpresa(id){
   document.getElementById('empresa-id').value = id || '';
   if(id){
     const e = empresas.find(x=>x.id===id);
+    document.getElementById('empresa-tipo').value = e.tipo === 'pf' ? 'pf' : 'pj';
+    document.getElementById('empresa-tipo').disabled = true;
+    preencherVinculosPF(e.vinculoEmpresaId || '');
     document.getElementById('empresa-nome').value = e.nome;
     document.getElementById('empresa-cnpj').value = e.cnpj || '';
-    document.getElementById('empresa-regime').value = e.regime;
+    document.getElementById('empresa-regime').value = e.regime === 'pf' ? 'simples' : e.regime;
     document.getElementById('empresa-ativa').value = e.ativo ? '1':'0';
     document.getElementById('empresa-rbt12-inicial').value = e.rbt12Inicial || '';
     document.getElementById('empresa-conta-padrao').value = e.contaPadrao || '1.1.02';
@@ -1215,6 +1269,9 @@ function abrirModalEmpresa(id){
     carregarAcessosEmpresa(id);
   } else {
     document.getElementById('empresa-acessos-box').style.display = 'none';
+    document.getElementById('empresa-tipo').value = 'pj';
+    document.getElementById('empresa-tipo').disabled = false;
+    preencherVinculosPF('');
     document.getElementById('empresa-nome').value = '';
     document.getElementById('empresa-cnpj').value = '';
     document.getElementById('empresa-regime').value = 'simples';
@@ -1222,7 +1279,35 @@ function abrirModalEmpresa(id){
     document.getElementById('empresa-rbt12-inicial').value = '';
     document.getElementById('empresa-conta-padrao').value = '1.1.02';
   }
+  alternarTipoEmpresa();
   abrirModal('modal-empresa');
+}
+function preencherVinculosPF(selecionado){
+  const pjs = empresas.filter(x=>x.tipo !== 'pf');
+  document.getElementById('empresa-vinculo').innerHTML = '<option value="">(sem vínculo por enquanto)</option>' +
+    pjs.map(x=>`<option value="${x.id}" ${x.id===selecionado?'selected':''}>${x.nome}</option>`).join('');
+}
+function alternarTipoEmpresa(){
+  const pf = document.getElementById('empresa-tipo').value === 'pf';
+  document.getElementById('empresa-vinculo-box').style.display = pf ? 'block' : 'none';
+  document.getElementById('empresa-regime-box').style.display = pf ? 'none' : 'block';
+  document.getElementById('empresa-rbt12-box').style.display = pf ? 'none' : 'block';
+}
+/* Liga (ou desliga) o cadastro PF aos logins de TITULAR da empresa vinculada.
+   Assistentes nunca recebem acesso à parte pessoal. */
+async function sincronizarVinculoPF(pfId, pjId){
+  try{
+    const snap = await db.ref('usuariosClientes').once('value');
+    const todos = snap.val() || {};
+    const up = {};
+    Object.entries(todos).forEach(([uid,u])=>{
+      const deve = !!pjId && u.empresaId === pjId && u.perfil !== 'secretaria';
+      const tem = !!(u.empresas && u.empresas[pfId]);
+      if(deve && !tem) up['usuariosClientes/'+uid+'/empresas/'+pfId] = true;
+      if(!deve && tem) up['usuariosClientes/'+uid+'/empresas/'+pfId] = null;
+    });
+    if(Object.keys(up).length) await db.ref().update(up);
+  }catch(e){ toast('Não foi possível vincular o acesso: '+e.message, true); }
 }
 function salvarEmpresa(){
   const id = document.getElementById('empresa-id').value;
@@ -1233,15 +1318,22 @@ function salvarEmpresa(){
   const ativo = document.getElementById('empresa-ativa').value === '1';
   const rbt12Inicial = parseFloat(document.getElementById('empresa-rbt12-inicial').value) || 0;
   const contaPadrao = document.getElementById('empresa-conta-padrao').value.trim() || '1.1.02';
+  const tipo = document.getElementById('empresa-tipo').value === 'pf' ? 'pf' : 'pj';
+  const vinculoEmpresaId = tipo === 'pf' ? (document.getElementById('empresa-vinculo').value || null) : null;
+  const dados = tipo === 'pf'
+    ? {nome, cnpj, regime:'pf', tipo:'pf', ativo, rbt12Inicial:0, contaPadrao, vinculoEmpresaId}
+    : {nome, cnpj, regime, tipo:'pj', ativo, rbt12Inicial, contaPadrao};
 
   if(id){
-    db.ref('empresas/'+id).update({nome, cnpj, regime, ativo, rbt12Inicial, contaPadrao})
+    db.ref('empresas/'+id).update(dados)
+      .then(()=>{ if(tipo==='pf') sincronizarVinculoPF(id, vinculoEmpresaId); })
       .catch(e=> toast('Erro ao salvar empresa: '+e.message, true));
   } else {
     const novoId = db.ref('empresas').push().key;
-    db.ref('empresas/'+novoId).set({nome, cnpj, regime, ativo, rbt12Inicial, contaPadrao}).then(()=>{
-      criarPlanoParaEmpresa(novoId);
-      criarCategoriasParaEmpresa(novoId);
+    db.ref('empresas/'+novoId).set(dados).then(()=>{
+      criarPlanoParaEmpresa(novoId, tipo);
+      criarCategoriasParaEmpresa(novoId, tipo);
+      if(tipo==='pf') sincronizarVinculoPF(novoId, vinculoEmpresaId);
       if(!empresaAtivaId){ empresaAtivaId = novoId; save(LS_KEYS.empresaAtiva, empresaAtivaId); }
     }).catch(e=> toast('Erro ao criar empresa: '+e.message, true));
   }
@@ -1251,6 +1343,7 @@ function salvarEmpresa(){
 async function excluirEmpresa(id){
   if(!confirm('Excluir esta empresa? Isso também removerá o plano de contas e os lançamentos dela.')) return;
   try{
+    if(tipoDaEmpresa(id)==='pf') await sincronizarVinculoPF(id, null);
     const updates = {
       ['empresas/'+id]: null,
       ['planosEmpresa/'+id]: null,
@@ -1282,7 +1375,7 @@ function empresaAtiva(){ return empresas.find(e=>e.id===empresaAtivaId); }
 
 function renderEmpresaPicker(){
   const sel = document.getElementById('empresa-ativa-select');
-  sel.innerHTML = empresas.map(e=>`<option value="${e.id}" ${e.id===empresaAtivaId?'selected':''}>${e.nome}</option>`).join('') || '<option>Nenhuma empresa</option>';
+  sel.innerHTML = empresas.map(e=>`<option value="${e.id}" ${e.id===empresaAtivaId?'selected':''}>${e.nome}${e.tipo==='pf'?' (PF)':''}</option>`).join('') || '<option>Nenhuma empresa</option>';
 }
 
 function renderListaEmpresas(){
@@ -1296,15 +1389,16 @@ function renderListaEmpresas(){
     <th>Empresa</th><th>CNPJ/CPF</th><th>Regime</th><th>Situação</th><th></th>
     </tr></thead><tbody>
     ${empresas.map(e=>{
-      const r = REGIME_LABEL[e.regime];
+      const r = REGIME_LABEL[e.regime] || REGIME_LABEL[e.tipo==='pf'?'pf':'simples'];
+      const pjVinc = e.tipo==='pf' && e.vinculoEmpresaId ? empresas.find(x=>x.id===e.vinculoEmpresaId) : null;
       return `<tr>
-        <td><strong>${e.nome}</strong></td>
+        <td><strong>${e.nome}</strong>${e.tipo==='pf' ? `<div style="font-size:11px;color:var(--ink-faint);">Pessoal${pjVinc?' · vinculada a '+pjVinc.nome:' · sem vínculo'}</div>`:''}</td>
         <td class="mono" style="color:var(--ink-soft)">${e.cnpj||'—'}</td>
         <td><span class="regime-badge ${r.cls}">${r.nome}</span></td>
         <td>${e.ativo ? '<span class="tag teal">Ativa</span>' : '<span class="tag">Inativa</span>'}</td>
         <td class="row-actions">
           <button class="icon-btn" onclick="abrirModalEmpresa('${e.id}')" title="Editar">✎</button>
-          <button class="icon-btn" onclick="abrirModalClienteLogin('${e.id}','${e.nome.replace(/'/g,"")}')" title="Criar acesso do cliente">🔑</button>
+          ${e.tipo==='pf' ? '' : `<button class="icon-btn" onclick="abrirModalClienteLogin('${e.id}','${e.nome.replace(/'/g,"")}')" title="Criar acesso do cliente">🔑</button>`}
           <button class="icon-btn" onclick="excluirEmpresa('${e.id}')" title="Excluir">🗑</button>
         </td>
       </tr>`;
@@ -1371,7 +1465,7 @@ function renderPlano(){
   const contas = contasDaEmpresa(emp.id);
   if(contas.length === 0){
     box.innerHTML = `<div class="empty-state"><div class="icon">📒</div><p>Essa empresa ainda não tem nenhuma conta no plano.</p>
-      <button class="btn btn-teal btn-sm" onclick="criarPlanoParaEmpresa('${emp.id}')">Repor plano de contas padrão</button></div>`;
+      <button class="btn btn-teal btn-sm" onclick="criarPlanoParaEmpresa('${emp.id}', '${emp.tipo==='pf'?'pf':'pj'}')">Repor plano de contas padrão</button></div>`;
     return;
   }
   box.innerHTML = Object.keys(GRUPOS).map(tipo=>{
@@ -2267,7 +2361,11 @@ function renderMonitorLimite(){
   const box = document.getElementById('plantrib-limite');
   if(!emp){ box.innerHTML = `<div class="empty-state"><div class="icon">📐</div><p>Selecione uma empresa.</p></div>`; return; }
 
-  const r = REGIME_LABEL[emp.regime];
+  if(emp.tipo === 'pf'){
+    box.innerHTML = `<div class="empty-state"><div class="icon">👤</div><p>O planejamento tributário é para empresas (CNPJ). Para a pessoa física, use o Planejamento Financeiro.</p></div>`;
+    return;
+  }
+  const r = REGIME_LABEL[emp.regime] || REGIME_LABEL.simples;
   const receita12m = rbt12(emp.id);
   const notaInicial = (emp.rbt12Inicial||0) > 0 ? ` <span style="font-weight:400;color:var(--ink-faint);font-size:10px;">(inclui saldo inicial de ${fmtMoeda(emp.rbt12Inicial)})</span>` : '';
 
@@ -2406,9 +2504,28 @@ const CATEGORIAS_PADRAO = [
   ['Despesas financeiras / tarifas', 'saida', '5.2.04'],
   ['Outras despesas', 'saida', '5.2.05']
 ];
-function criarCategoriasParaEmpresa(empresaId){
+const CATEGORIAS_PF = [
+  ['Salário / Pró-labore', 'entrada', '4.1.01'],
+  ['Distribuição de lucros', 'entrada', '4.1.02'],
+  ['Rendimentos de investimentos', 'entrada', '4.1.03'],
+  ['Aluguéis recebidos', 'entrada', '4.1.04'],
+  ['Outras receitas', 'entrada', '4.1.05'],
+  ['Moradia (aluguel, condomínio, contas)', 'saida', '5.2.01'],
+  ['Alimentação / mercado', 'saida', '5.2.02'],
+  ['Transporte', 'saida', '5.2.03'],
+  ['Saúde', 'saida', '5.2.04'],
+  ['Educação', 'saida', '5.2.05'],
+  ['Lazer e viagens', 'saida', '5.2.06'],
+  ['Vestuário e cuidados pessoais', 'saida', '5.2.07'],
+  ['Impostos pessoais (IPTU, IPVA, IR)', 'saida', '5.2.08'],
+  ['Assinaturas e serviços', 'saida', '5.2.09'],
+  ['Juros e tarifas', 'saida', '5.2.10'],
+  ['Outras despesas', 'saida', '5.2.11']
+];
+function criarCategoriasParaEmpresa(empresaId, tipo){
   const updates = {};
-  CATEGORIAS_PADRAO.forEach(([nome,tipo,contaCodigo])=>{
+  const base = (tipo || tipoDaEmpresa(empresaId)) === 'pf' ? CATEGORIAS_PF : CATEGORIAS_PADRAO;
+  base.forEach(([nome,tipo,contaCodigo])=>{
     const novoId = db.ref('categoriasEmpresa/'+empresaId).push().key;
     updates['categoriasEmpresa/'+empresaId+'/'+novoId] = {empresaId, nome, tipo, contaCodigo};
   });
@@ -2471,7 +2588,7 @@ function renderListaCategorias(){
     box.innerHTML = `<div class="empty-state"><div class="icon">🏷️</div><p>Nenhuma categoria cadastrada ainda.</p>
       <div class="row-actions" style="justify-content:center;">
         <button class="btn btn-primary btn-sm" onclick="abrirModalCategoria()">Cadastrar uma</button>
-        <button class="btn btn-teal btn-sm" onclick="criarCategoriasParaEmpresa('${emp.id}')">Usar categorias padrão</button>
+        <button class="btn btn-teal btn-sm" onclick="criarCategoriasParaEmpresa('${emp.id}', '${emp.tipo==='pf'?'pf':'pj'}')">Usar categorias padrão</button>
       </div></div>`;
     return;
   }
@@ -2503,7 +2620,7 @@ async function carregarAcessosEmpresa(empId){
   try{
     const snap = await db.ref('usuariosClientes').once('value');
     const todos = snap.val() || {};
-    const lista = Object.entries(todos).filter(([uid,u])=>u.empresaId===empId);
+    const lista = Object.entries(todos).filter(([uid,u])=>u.empresaId===empId || (u.empresas && u.empresas[empId]));
     const emp = empresas.find(x=>x.id===empId);
     const nomeSeguro = emp ? emp.nome.replace(/'/g,'').replace(/"/g,'') : '';
     let h = lista.map(([uid,u])=>`<div style="display:flex;align-items:center;gap:8px;padding:9px 0;border-bottom:1px solid var(--line);font-size:13px;">
@@ -2511,7 +2628,8 @@ async function carregarAcessosEmpresa(empId){
       <div style="font-size:11px;color:var(--ink-faint);">${u.perfil==='secretaria'?'Assistente (sem financeiro)':'Titular'}</div></div>
       <button class="btn btn-ghost" style="padding:6px 10px;font-size:12px;" onclick="enviarNovaSenha('${(u.email||'').replace(/'/g,'')}')">Enviar nova senha</button></div>`).join('');
     if(!lista.length) h = '<p class="helper-text" style="margin:10px 0;">Nenhum acesso criado ainda para esta empresa.</p>';
-    h += `<div style="padding:9px 0;"><button class="btn btn-ghost" style="padding:6px 12px;font-size:12px;" onclick="abrirModalClienteLogin('${empId}','${nomeSeguro}')">+ Criar novo acesso</button></div>`;
+    if(emp && emp.tipo==='pf') h += '<p class="helper-text" style="margin:8px 0 10px;">O acesso pessoal é o mesmo login da empresa vinculada. Para criar ou remover logins, edite a empresa (CNPJ) do cliente.</p>';
+    else h += `<div style="padding:9px 0;"><button class="btn btn-ghost" style="padding:6px 12px;font-size:12px;" onclick="abrirModalClienteLogin('${empId}','${nomeSeguro}')">+ Criar novo acesso</button></div>`;
     box.innerHTML = h;
   }catch(e){
     box.innerHTML = '<p class="helper-text" style="margin:10px 0;color:var(--danger);">Não foi possível carregar os acessos: '+e.message+'</p>';
@@ -2535,7 +2653,12 @@ async function criarLoginCliente(){
     const cred = await authCliente.createUserWithEmailAndPassword(email, senha);
     const uid = cred.user.uid;
     const perfil = document.getElementById('cliente-login-perfil').value || 'dona';
-    await db.ref('usuariosClientes/'+uid).set({empresaId, email, perfil});
+    const registro = {empresaId, email, perfil};
+    if(perfil !== 'secretaria'){
+      const pfs = empresas.filter(x=>x.tipo==='pf' && x.vinculoEmpresaId===empresaId);
+      if(pfs.length){ registro.empresas = {}; pfs.forEach(x=>{ registro.empresas[x.id] = true; }); }
+    }
+    await db.ref('usuariosClientes/'+uid).set(registro);
     await authCliente.signOut();
     fecharModal('modal-cliente-login');
     if(document.getElementById('modal-empresa').classList.contains('open') && document.getElementById('empresa-id').value===empresaId) carregarAcessosEmpresa(empresaId);
