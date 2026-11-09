@@ -39,6 +39,11 @@
   .login-card button.primary{width:100%;padding:13px;border-radius:10px;background:var(--purple-800);color:#fff;font-weight:600;font-size:15px;}
   .login-error{color:var(--danger);font-size:12.5px;margin-top:10px;min-height:16px;}
 
+  #app.on{display:block;}
+  .seg-wrap{display:none;padding:4px 18px 2px;}
+  .seg{display:flex;background:#fff;border:1px solid var(--line);border-radius:12px;padding:3px;gap:3px;}
+  .seg button{flex:1;padding:9px 6px;border-radius:9px;font-size:13px;font-weight:600;background:none;color:var(--ink-soft);}
+  .seg button.active{background:var(--purple-800);color:#fff;}
   #app{display:none;max-width:460px;margin:0 auto;min-height:100vh;padding-bottom:78px;position:relative;}
   .topbar{display:flex;align-items:center;gap:10px;padding:18px 20px 6px;}
   .topbar img{width:32px;height:32px;border-radius:8px;object-fit:cover;}
@@ -137,7 +142,8 @@
       background:linear-gradient(150deg, var(--purple-900) 0%, var(--purple-700) 55%, var(--teal-500) 130%);
       min-height:100vh;
     }
-    #app{
+    .seg-wrap{order:1;padding:16px 34px 0;max-width:340px;}
+    #app.on{
       display:flex;flex-direction:column;
       max-width:900px;width:92%;margin:36px auto;
       min-height:calc(100vh - 72px);
@@ -210,6 +216,7 @@
     </div>
     <a href="#" class="logout-link" onclick="logout();return false;">Sair</a>
   </div>
+  <div class="seg-wrap" id="seg-wrap"><div class="seg" id="seg-cadastro"></div></div>
 
   <!-- DASHBOARD -->
   <div class="view active" id="view-dashboard">
@@ -320,6 +327,7 @@ firebase.initializeApp(firebaseConfig);
 const auth = firebase.auth();
 const db = firebase.database();
 
+let cadastros = [];
 let empresaId = null;
 let empresaInfo = null;
 let categorias = [];
@@ -374,26 +382,52 @@ auth.onAuthStateChanged(async user=>{
         await auth.signOut();
         return;
       }
-      empresaId = snap.val().empresaId;
-      const empSnap = await db.ref('empresas/'+empresaId).once('value');
-      empresaInfo = empSnap.val();
-      document.getElementById('topbar-empresa').textContent = empresaInfo ? empresaInfo.nome : 'Minha empresa';
-
+      const rec = snap.val();
+      const ids = [rec.empresaId, ...Object.keys(rec.empresas || {})];
+      const lidos = await Promise.all(ids.map(id=> db.ref('empresas/'+id).once('value').then(sn=>({id, info:sn.val()})).catch(()=>null)));
+      cadastros = lidos.filter(x=> x && x.info);
+      if(!cadastros.length) throw new Error('empresa não encontrada.');
+      let inicial = cadastros[0].id;
+      try{ const salvo = localStorage.getItem('lw_cadastro_'+user.uid); if(salvo && cadastros.find(c=>c.id===salvo)) inicial = salvo; }catch(e){}
+      window.__uidAtual = user.uid;
+      montarSeletorCadastro();
       document.getElementById('login-screen').style.display = 'none';
-      document.getElementById('app').style.display = 'block';
-
-      iniciarListenersCliente();
+      document.getElementById('app').classList.add('on');
+      selecionarCadastro(inicial);
     }catch(e){
       document.getElementById('login-error').textContent = 'Erro ao carregar sua empresa: '+e.message;
       await auth.signOut();
     }
   } else {
     document.getElementById('login-screen').style.display = 'flex';
-    document.getElementById('app').style.display = 'none';
+    document.getElementById('app').classList.remove('on');
     pararListenersCliente();
   }
 });
 
+function montarSeletorCadastro(){
+  const wrap = document.getElementById('seg-wrap');
+  wrap.style.display = cadastros.length > 1 ? 'block' : 'none';
+  document.getElementById('seg-cadastro').innerHTML = cadastros.map(c=>
+    `<button data-id="${c.id}" onclick="selecionarCadastro('${c.id}')">${c.info.tipo==='pf' ? 'Pessoal' : 'Empresa'}</button>`).join('');
+}
+function desligarListenersDados(){
+  if(empresaId){
+    db.ref('categoriasEmpresa/'+empresaId).off();
+    db.ref('lancamentosEmpresa/'+empresaId).off();
+  }
+}
+function selecionarCadastro(id){
+  const c = cadastros.find(x=>x.id===id); if(!c) return;
+  desligarListenersDados();
+  empresaId = id; empresaInfo = c.info; categorias = []; lancamentos = [];
+  document.getElementById('topbar-empresa').textContent = c.info.nome || 'Minha empresa';
+  document.querySelectorAll('#seg-cadastro button').forEach(b=> b.classList.toggle('active', b.dataset.id===id));
+  try{ localStorage.setItem('lw_cadastro_'+window.__uidAtual, id); }catch(e){}
+  iniciarListenersCliente();
+  renderDashboard(); renderExtrato();
+  irParaView('dashboard');
+}
 function iniciarListenersCliente(){
   unsubCategorias = db.ref('categoriasEmpresa/'+empresaId).on('value', snap=>{
     categorias = objParaArray(snap.val());
@@ -411,7 +445,7 @@ function pararListenersCliente(){
     db.ref('categoriasEmpresa/'+empresaId).off();
     db.ref('lancamentosEmpresa/'+empresaId).off();
   }
-  empresaId = null; empresaInfo = null; categorias = []; lancamentos = [];
+  empresaId = null; empresaInfo = null; categorias = []; lancamentos = []; cadastros = [];
 }
 function objParaArray(obj){
   return obj ? Object.entries(obj).map(([id,data])=>({id, ...data})) : [];
