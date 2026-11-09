@@ -671,6 +671,11 @@
       <input type="text" id="empresa-conta-padrao" placeholder="1.1.02" class="mono" value="1.1.02">
       <p class="helper-text">Usada como contrapartida automática dos lançamentos feitos pelo app do cliente (ex: entrada de dinheiro cai nessa conta). Por padrão é "1.1.02 - Bancos".</p>
     </div>
+    <div class="field" id="empresa-acessos-box" style="display:none;">
+      <label>Acessos do cliente (app Meu Financeiro)</label>
+      <div id="empresa-acessos" style="border:1px solid var(--line);border-radius:10px;padding:4px 12px;"></div>
+      <p class="helper-text">Por segurança, a senha não fica guardada em lugar nenhum (nem eu consigo ver). Se o cliente esquecer, use "Enviar nova senha": ele recebe um e-mail para criar outra.</p>
+    </div>
     <div class="modal-actions">
       <button class="btn btn-ghost" onclick="fecharModal('modal-empresa')">Cancelar</button>
       <button class="btn btn-primary" onclick="salvarEmpresa()">Salvar</button>
@@ -843,6 +848,13 @@
       <label>Senha provisória</label>
       <input type="text" id="cliente-login-senha" placeholder="mínimo 6 caracteres">
       <p class="helper-text">Passe essa senha pro cliente por fora (WhatsApp, por exemplo). Ele consegue trocar depois, se quiser.</p>
+    </div>
+    <div class="field">
+      <label>Perfil de acesso</label>
+      <select id="cliente-login-perfil">
+        <option value="dona">Titular (vê tudo: agenda, financeiro e notas)</option>
+        <option value="secretaria">Assistente (só agenda e notas, sem financeiro)</option>
+      </select>
     </div>
     <div class="modal-actions">
       <button class="btn btn-ghost" onclick="fecharModal('modal-cliente-login')">Cancelar</button>
@@ -1199,7 +1211,10 @@ function abrirModalEmpresa(id){
     document.getElementById('empresa-ativa').value = e.ativo ? '1':'0';
     document.getElementById('empresa-rbt12-inicial').value = e.rbt12Inicial || '';
     document.getElementById('empresa-conta-padrao').value = e.contaPadrao || '1.1.02';
+    document.getElementById('empresa-acessos-box').style.display = 'block';
+    carregarAcessosEmpresa(id);
   } else {
+    document.getElementById('empresa-acessos-box').style.display = 'none';
     document.getElementById('empresa-nome').value = '';
     document.getElementById('empresa-cnpj').value = '';
     document.getElementById('empresa-regime').value = 'simples';
@@ -2479,7 +2494,35 @@ function abrirModalClienteLogin(empresaId, nomeEmpresa){
   document.getElementById('cliente-login-empresa-nome').textContent = `Empresa: ${nomeEmpresa}`;
   document.getElementById('cliente-login-email').value = '';
   document.getElementById('cliente-login-senha').value = '';
+  document.getElementById('cliente-login-perfil').value = 'dona';
   abrirModal('modal-cliente-login');
+}
+async function carregarAcessosEmpresa(empId){
+  const box = document.getElementById('empresa-acessos');
+  box.innerHTML = '<p class="helper-text" style="margin:10px 0;">Carregando…</p>';
+  try{
+    const snap = await db.ref('usuariosClientes').once('value');
+    const todos = snap.val() || {};
+    const lista = Object.entries(todos).filter(([uid,u])=>u.empresaId===empId);
+    const emp = empresas.find(x=>x.id===empId);
+    const nomeSeguro = emp ? emp.nome.replace(/'/g,'').replace(/"/g,'') : '';
+    let h = lista.map(([uid,u])=>`<div style="display:flex;align-items:center;gap:8px;padding:9px 0;border-bottom:1px solid var(--line);font-size:13px;">
+      <div style="flex:1;min-width:0;"><div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;">${u.email||'(sem e-mail)'}</div>
+      <div style="font-size:11px;color:var(--ink-faint);">${u.perfil==='secretaria'?'Assistente (sem financeiro)':'Titular'}</div></div>
+      <button class="btn btn-ghost" style="padding:6px 10px;font-size:12px;" onclick="enviarNovaSenha('${(u.email||'').replace(/'/g,'')}')">Enviar nova senha</button></div>`).join('');
+    if(!lista.length) h = '<p class="helper-text" style="margin:10px 0;">Nenhum acesso criado ainda para esta empresa.</p>';
+    h += `<div style="padding:9px 0;"><button class="btn btn-ghost" style="padding:6px 12px;font-size:12px;" onclick="abrirModalClienteLogin('${empId}','${nomeSeguro}')">+ Criar novo acesso</button></div>`;
+    box.innerHTML = h;
+  }catch(e){
+    box.innerHTML = '<p class="helper-text" style="margin:10px 0;color:var(--danger);">Não foi possível carregar os acessos: '+e.message+'</p>';
+  }
+}
+async function enviarNovaSenha(email){
+  if(!email){ toast('Esse acesso não tem e-mail cadastrado.', true); return; }
+  try{
+    await authCliente.sendPasswordResetEmail(email);
+    toast('E-mail enviado para '+email+'. Avise o cliente para olhar a caixa de entrada e o spam.');
+  }catch(e){ toast('Não foi possível enviar: '+e.message, true); }
 }
 async function criarLoginCliente(){
   const empresaId = document.getElementById('cliente-login-empresa-id').value;
@@ -2491,9 +2534,11 @@ async function criarLoginCliente(){
   try{
     const cred = await authCliente.createUserWithEmailAndPassword(email, senha);
     const uid = cred.user.uid;
-    await db.ref('usuariosClientes/'+uid).set({empresaId, email});
+    const perfil = document.getElementById('cliente-login-perfil').value || 'dona';
+    await db.ref('usuariosClientes/'+uid).set({empresaId, email, perfil});
     await authCliente.signOut();
     fecharModal('modal-cliente-login');
+    if(document.getElementById('modal-empresa').classList.contains('open') && document.getElementById('empresa-id').value===empresaId) carregarAcessosEmpresa(empresaId);
     toast('Acesso do cliente criado! Agora é só passar o e-mail e a senha pra ele.');
   }catch(e){
     const map = {
